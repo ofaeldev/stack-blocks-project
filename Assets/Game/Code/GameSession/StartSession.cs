@@ -5,14 +5,7 @@ using System.Collections.Generic;
 
 public class StartSession : MonoBehaviour
 {
-    private enum GameMode
-    {
-        Relax,
-        Hardcore,
-        PhysicsMode
-    }
-
-    [SerializeField] private GameMode gameMode = GameMode.PhysicsMode;
+    [SerializeField] private StackGameMode gameMode = StackGameMode.PhysicsMode;
     [SerializeField] private GameObject blockPrefab;
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private float blockHeight = 1f;
@@ -26,9 +19,13 @@ public class StartSession : MonoBehaviour
     [SerializeField] private float restartDelay = 1.5f;
     [SerializeField] private float comboWindow = 0.8f;
     [SerializeField] private int baseScorePerBlock = 100;
-    [SerializeField] private float impactPulseScale = 1.12f;
-    [SerializeField] private float impactPulseDuration = 0.12f;
+    [SerializeField] private float squashAmount = 0.14f;
+    [SerializeField] private float impactPulseDuration = 0.08f;
     [SerializeField] private float cameraImpactStrength = 0.08f;
+    [SerializeField] private float perfectCameraImpactStrength = 0.14f;
+    [SerializeField] private float missCameraImpactStrength = 0.22f;
+    [SerializeField] private float perfectDistance = 0.06f;
+    [SerializeField] private float perfectHitStopDuration = 0.045f;
     [SerializeField] private float placedBlockMass = 2f;
     [SerializeField] private float placementTorqueImpulse = 2.5f;
     [SerializeField] private float windStrength = 0.08f;
@@ -42,6 +39,7 @@ public class StartSession : MonoBehaviour
     [SerializeField] private StackHud hud;
     [SerializeField] private StackFeedbackController feedback;
     [SerializeField] private StackBiomeController biomeController;
+    [SerializeField] private StackMainMenu mainMenu;
 
     private GameObject currentBlock;
     private Transform lastStackedBlock;
@@ -57,10 +55,12 @@ public class StartSession : MonoBehaviour
     private int comboStreak;
     private StackProgression progression;
     private string currentBiomeName = "City";
+    private bool hasStarted;
     private bool isRestarting;
 
     private void Start()
     {
+        Time.timeScale = 1f;
         progression = StackProgression.Load();
 
         if (stackCamera == null)
@@ -94,13 +94,30 @@ public class StartSession : MonoBehaviour
             biomeController = StackBiomeController.Create(sceneCamera);
         }
 
+        if (mainMenu == null)
+        {
+            mainMenu = FindFirstObjectByType<StackMainMenu>();
+        }
+
+        if (mainMenu == null)
+        {
+            mainMenu = StackMainMenu.Create();
+        }
+
         placementGuide = PlacementGuide.Create(placementTolerance);
-        StartNewGame();
+        placementGuide.SetVisible(false);
+        hud.SetMeta(progression);
+        mainMenu.Show(StartSelectedMode);
+    }
+
+    private void OnDisable()
+    {
+        Time.timeScale = 1f;
     }
 
     private void Update()
     {
-        if (isRestarting || currentBlock == null)
+        if (!hasStarted || isRestarting || currentBlock == null)
         {
             return;
         }
@@ -110,11 +127,6 @@ public class StartSession : MonoBehaviour
 
         Keyboard keyboard = Keyboard.current;
 
-        if (keyboard != null)
-        {
-            HandleModeHotkeys(keyboard);
-        }
-
         if (keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame))
         {
             TryPlaceCurrentBlock();
@@ -123,7 +135,7 @@ public class StartSession : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (isRestarting || stackedRigidbodies.Count == 0)
+        if (!hasStarted || isRestarting || stackedRigidbodies.Count == 0)
         {
             return;
         }
@@ -140,8 +152,16 @@ public class StartSession : MonoBehaviour
         }
     }
 
+    private void StartSelectedMode(StackGameMode selectedMode)
+    {
+        gameMode = selectedMode;
+        hasStarted = true;
+        StartNewGame();
+    }
+
     private void StartNewGame()
     {
+        Time.timeScale = 1f;
         ClearSpawnedBlocks();
 
         score = 0;
@@ -207,6 +227,10 @@ public class StartSession : MonoBehaviour
             placementGuide.SetVisible(false);
             hud.ShowDanger("Miss!");
             feedback.PlayDanger(currentBlock.transform.position);
+            if (stackCamera != null)
+            {
+                stackCamera.AddImpact(missCameraImpactStrength);
+            }
             HandleFailure("Miss!");
         }
     }
@@ -229,30 +253,48 @@ public class StartSession : MonoBehaviour
         );
 
         Rigidbody placedRigidbody = AddPlacedBlockPhysics(currentBlock, placementOffset);
-        stackedRigidbodies.Add(placedRigidbody);
+
+        if (placedRigidbody != null)
+        {
+            stackedRigidbodies.Add(placedRigidbody);
+        }
 
         lastStackedBlock = currentBlock.transform;
         score++;
-        int gainedScore = RegisterScore(placementOffset);
+        float placementDistance = new Vector2(placementOffset.x, placementOffset.z).magnitude;
+        float accuracy = 1f - Mathf.Clamp01(placementDistance / currentPlacementTolerance);
+        bool isPerfect = placementDistance <= perfectDistance;
+        int gainedScore = RegisterScore(accuracy, isPerfect);
         nextStabilityCheckTime = Time.time + stabilityGraceAfterPlacement;
         StartCoroutine(PulseBlock(currentBlock.transform));
         currentBiomeName = biomeController != null ? biomeController.UpdateForBlocks(score) : currentBiomeName;
-        feedback.PlayPlacement(currentBlock.transform.position, comboStreak);
+        feedback.PlayPlacement(currentBlock.transform.position, comboStreak, isPerfect, accuracy);
+
+        if (isPerfect)
+        {
+            StartCoroutine(HitStop(perfectHitStopDuration));
+        }
 
         if (stackCamera != null)
         {
             stackCamera.SetTargetHeight(targetPosition.y);
-            stackCamera.AddImpact(cameraImpactStrength);
+            stackCamera.AddImpact(isPerfect ? perfectCameraImpactStrength : cameraImpactStrength);
         }
 
         UpdateHud();
-        hud.ShowPlacement(comboStreak > 1, gainedScore);
+        hud.ShowPlacement(comboStreak > 1, gainedScore, isPerfect, GetPrecisionLabel(accuracy));
 
         Debug.Log($"Blocks: {score} | Score: {totalScore} | Combo: x{comboStreak}");
     }
 
     private Rigidbody AddPlacedBlockPhysics(GameObject block, Vector3 placementOffset)
     {
+        if (gameMode == StackGameMode.Relax)
+        {
+            block.transform.position -= new Vector3(placementOffset.x, 0f, placementOffset.z);
+            return null;
+        }
+
         Rigidbody blockRigidbody = block.GetComponent<Rigidbody>();
 
         if (blockRigidbody == null)
@@ -270,16 +312,16 @@ public class StartSession : MonoBehaviour
         return blockRigidbody;
     }
 
-    private int RegisterScore(Vector3 placementOffset)
+    private int RegisterScore(float accuracy, bool isPerfect)
     {
         float timeSinceLastPlacement = Time.time - lastPlacementTime;
         comboStreak = timeSinceLastPlacement <= comboWindow ? comboStreak + 1 : 1;
         lastPlacementTime = Time.time;
 
-        float accuracy = 1f - Mathf.Clamp01(new Vector2(placementOffset.x, placementOffset.z).magnitude / currentPlacementTolerance);
         int comboBonus = Mathf.Max(0, comboStreak - 1) * 25;
         int accuracyBonus = Mathf.RoundToInt(baseScorePerBlock * accuracy);
-        int gainedScore = baseScorePerBlock + comboBonus + accuracyBonus;
+        int perfectBonus = isPerfect ? baseScorePerBlock : 0;
+        int gainedScore = baseScorePerBlock + comboBonus + accuracyBonus + perfectBonus;
 
         totalScore += gainedScore;
 
@@ -289,14 +331,34 @@ public class StartSession : MonoBehaviour
     private IEnumerator PulseBlock(Transform blockTransform)
     {
         Vector3 startScale = blockTransform.localScale;
-        Vector3 pulseScale = startScale * impactPulseScale;
         float elapsedTime = 0f;
 
         while (elapsedTime < impactPulseDuration)
         {
             elapsedTime += Time.deltaTime;
             float progress = elapsedTime / impactPulseDuration;
-            blockTransform.localScale = Vector3.Lerp(startScale, pulseScale, progress);
+            Vector3 squashScale = new(
+                startScale.x * (1f + squashAmount),
+                startScale.y * (1f - squashAmount),
+                startScale.z * (1f + squashAmount)
+            );
+
+            blockTransform.localScale = Vector3.Lerp(startScale, squashScale, progress);
+            yield return null;
+        }
+
+        elapsedTime = 0f;
+        Vector3 stretchScale = new(
+            startScale.x * (1f - squashAmount * 0.45f),
+            startScale.y * (1f + squashAmount * 0.65f),
+            startScale.z * (1f - squashAmount * 0.45f)
+        );
+
+        while (elapsedTime < impactPulseDuration)
+        {
+            elapsedTime += Time.deltaTime;
+            float progress = elapsedTime / impactPulseDuration;
+            blockTransform.localScale = Vector3.Lerp(blockTransform.localScale, stretchScale, progress);
             yield return null;
         }
 
@@ -306,11 +368,33 @@ public class StartSession : MonoBehaviour
         {
             elapsedTime += Time.deltaTime;
             float progress = elapsedTime / impactPulseDuration;
-            blockTransform.localScale = Vector3.Lerp(pulseScale, startScale, progress);
+            blockTransform.localScale = Vector3.Lerp(stretchScale, startScale, progress);
             yield return null;
         }
 
         blockTransform.localScale = startScale;
+    }
+
+    private IEnumerator HitStop(float duration)
+    {
+        Time.timeScale = 0f;
+        yield return new WaitForSecondsRealtime(duration);
+        Time.timeScale = 1f;
+    }
+
+    private static string GetPrecisionLabel(float accuracy)
+    {
+        if (accuracy >= 0.9f)
+        {
+            return "CENTERED";
+        }
+
+        if (accuracy >= 0.65f)
+        {
+            return "GOOD";
+        }
+
+        return "OK";
     }
 
     private void UpdatePlacementGuide()
@@ -331,7 +415,7 @@ public class StartSession : MonoBehaviour
 
     private void CheckTowerStability()
     {
-        if (gameMode == GameMode.Relax)
+        if (gameMode == StackGameMode.Relax)
         {
             return;
         }
@@ -365,10 +449,11 @@ public class StartSession : MonoBehaviour
 
     private void HandleFailure(string reason)
     {
-        if (gameMode == GameMode.Relax)
+        if (gameMode == StackGameMode.Relax)
         {
-            hud.ShowDanger($"{reason} Relax saved");
-            RecoverRelaxMode();
+            hud.ShowDanger($"{reason} Try again");
+            EndRun();
+            StartCoroutine(RestartCleanAfterDelay());
             return;
         }
 
@@ -376,17 +461,11 @@ public class StartSession : MonoBehaviour
         StartCoroutine(RestartAfterFall());
     }
 
-    private void RecoverRelaxMode()
+    private IEnumerator RestartCleanAfterDelay()
     {
-        if (currentBlock != null)
-        {
-            Destroy(currentBlock);
-            spawnedBlocks.Remove(currentBlock);
-            currentBlock = null;
-        }
-
-        comboStreak = 0;
-        SpawnNextBlock();
+        isRestarting = true;
+        yield return new WaitForSeconds(restartDelay);
+        StartNewGame();
     }
 
     private void EndRun()
@@ -418,34 +497,6 @@ public class StartSession : MonoBehaviour
         }
 
         return Mathf.Clamp01(worstRisk);
-    }
-
-    private void HandleModeHotkeys(Keyboard keyboard)
-    {
-        if (keyboard.digit1Key.wasPressedThisFrame)
-        {
-            SetMode(GameMode.Relax);
-        }
-        else if (keyboard.digit2Key.wasPressedThisFrame)
-        {
-            SetMode(GameMode.Hardcore);
-        }
-        else if (keyboard.digit3Key.wasPressedThisFrame)
-        {
-            SetMode(GameMode.PhysicsMode);
-        }
-    }
-
-    private void SetMode(GameMode mode)
-    {
-        if (gameMode == mode)
-        {
-            return;
-        }
-
-        gameMode = mode;
-        hud.ShowReady();
-        UpdateHud();
     }
 
     private IEnumerator RestartAfterFall()

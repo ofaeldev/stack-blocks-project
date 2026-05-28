@@ -46,17 +46,19 @@ public class StackFeedbackController : MonoBehaviour
         shape.radius = 0.45f;
     }
 
-    public void PlayPlacement(Vector3 position, int combo)
+    public void PlayPlacement(Vector3 position, int combo, bool isPerfect, float accuracy)
     {
         placementParticles.transform.position = position;
 
         ParticleSystem.MainModule main = placementParticles.main;
-        main.startColor = combo > 1 ? Color.Lerp(placementColor, Color.white, 0.35f) : placementColor;
-        placementParticles.Emit(18 + Mathf.Clamp(combo, 0, 8) * 4);
+        main.startColor = isPerfect ? Color.white : combo > 1 ? Color.Lerp(placementColor, Color.white, 0.35f) : placementColor;
+        placementParticles.Emit((isPerfect ? 42 : 18) + Mathf.Clamp(combo, 0, 8) * 4);
 
         float frequency = baseToneFrequency * Mathf.Pow(1.12246f, toneIndex % 8);
+        float duration = isPerfect ? 0.14f : 0.08f;
+        float volume = Mathf.Lerp(0.12f, 0.28f, accuracy);
         toneIndex++;
-        audioSource.PlayOneShot(CreateTone(frequency, 0.08f, 0.18f));
+        audioSource.PlayOneShot(CreateTone(isPerfect ? frequency * 2f : frequency, duration, volume));
     }
 
     public void PlayDanger(Vector3 position)

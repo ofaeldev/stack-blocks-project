@@ -68,11 +68,13 @@ public class StackHud : MonoBehaviour
         metaText.text = $"Best {progression.BestScore} | Coins {progression.Coins} | Level {progression.PlayerLevel} | Skins {progression.UnlockedSkinCount} | Themes {progression.UnlockedThemeCount}";
     }
 
-    public void ShowPlacement(bool wasCombo, int gainedScore)
+    public void ShowPlacement(bool wasCombo, int gainedScore, bool isPerfect, string precisionLabel)
     {
-        string message = wasCombo ? $"+{gainedScore} Combo!" : $"+{gainedScore}";
-        Color color = wasCombo ? comboMessageColor : normalMessageColor;
-        ShowMessage(message, color, 0.65f);
+        string comboPart = wasCombo ? " Combo!" : "";
+        string message = isPerfect ? $"PERFECT +{gainedScore}{comboPart}" : $"{precisionLabel} +{gainedScore}{comboPart}";
+        Color color = isPerfect || wasCombo ? comboMessageColor : normalMessageColor;
+        float duration = isPerfect ? 0.9f : 0.65f;
+        ShowMessage(message, color, duration);
     }
 
     public void ShowDanger(string message)
