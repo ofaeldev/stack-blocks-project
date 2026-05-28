@@ -6,10 +6,15 @@ using UnityEngine.UI;
 public class StackMainMenu : MonoBehaviour
 {
     private GameObject menuRoot;
+    private GameObject confirmRoot;
     private Text titleText;
     private Text optionText;
+    private Text confirmText;
     private Action<StackGameMode> onModeSelected;
+    private Action onExitConfirmed;
+    private Action onExitCancelled;
     private bool isShowing;
+    private bool isConfirmingExit;
 
     public static StackMainMenu Create()
     {
@@ -22,7 +27,7 @@ public class StackMainMenu : MonoBehaviour
 
     private void Update()
     {
-        if (!isShowing)
+        if (!isShowing && !isConfirmingExit)
         {
             return;
         }
@@ -31,6 +36,20 @@ public class StackMainMenu : MonoBehaviour
 
         if (keyboard == null)
         {
+            return;
+        }
+
+        if (isConfirmingExit)
+        {
+            if (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)
+            {
+                ConfirmExit();
+            }
+            else if (keyboard.escapeKey.wasPressedThisFrame)
+            {
+                CancelExit();
+            }
+
             return;
         }
 
@@ -52,19 +71,45 @@ public class StackMainMenu : MonoBehaviour
     {
         onModeSelected = selectedModeCallback;
         isShowing = true;
+        isConfirmingExit = false;
         menuRoot.SetActive(true);
+        confirmRoot.SetActive(false);
+    }
+
+    public void ShowExitConfirmation(Action confirmedCallback, Action cancelledCallback)
+    {
+        onExitConfirmed = confirmedCallback;
+        onExitCancelled = cancelledCallback;
+        isShowing = false;
+        isConfirmingExit = true;
+        menuRoot.SetActive(false);
+        confirmRoot.SetActive(true);
     }
 
     public void Hide()
     {
         isShowing = false;
+        isConfirmingExit = false;
         menuRoot.SetActive(false);
+        confirmRoot.SetActive(false);
     }
 
     private void SelectMode(StackGameMode mode)
     {
         Hide();
         onModeSelected?.Invoke(mode);
+    }
+
+    private void ConfirmExit()
+    {
+        Hide();
+        onExitConfirmed?.Invoke();
+    }
+
+    private void CancelExit()
+    {
+        Hide();
+        onExitCancelled?.Invoke();
     }
 
     private void Build()
@@ -107,7 +152,26 @@ public class StackMainMenu : MonoBehaviour
             "3  Physics Mode\n" +
             "Arcade timing with living tower physics";
 
+        confirmRoot = new GameObject("ConfirmExitRoot");
+        confirmRoot.transform.SetParent(transform, false);
+
+        Image confirmBackground = confirmRoot.AddComponent<Image>();
+        confirmBackground.color = new Color(0.02f, 0.02f, 0.04f, 0.9f);
+        RectTransform confirmBackgroundRect = confirmBackground.rectTransform;
+        confirmBackgroundRect.anchorMin = Vector2.zero;
+        confirmBackgroundRect.anchorMax = Vector2.one;
+        confirmBackgroundRect.offsetMin = Vector2.zero;
+        confirmBackgroundRect.offsetMax = Vector2.zero;
+
+        confirmText = CreateText("ConfirmText", confirmRoot.transform, font, 42, TextAnchor.MiddleCenter);
+        SetRect(confirmText.rectTransform, Vector2.zero, new Vector2(1120f, 360f), new Vector2(0.5f, 0.5f));
+        confirmText.text =
+            "Exit current mode?\n\n" +
+            "Enter / Space  Confirm\n" +
+            "Esc  Continue";
+
         menuRoot.SetActive(false);
+        confirmRoot.SetActive(false);
     }
 
     private static Text CreateText(string objectName, Transform parent, Font font, int fontSize, TextAnchor alignment)

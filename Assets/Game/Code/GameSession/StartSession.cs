@@ -57,6 +57,7 @@ public class StartSession : MonoBehaviour
     private string currentBiomeName = "City";
     private bool hasStarted;
     private bool isRestarting;
+    private bool isExitConfirmOpen;
 
     private void Start()
     {
@@ -122,10 +123,21 @@ public class StartSession : MonoBehaviour
             return;
         }
 
+        Keyboard keyboard = Keyboard.current;
+
+        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+        {
+            OpenExitConfirmation();
+            return;
+        }
+
+        if (isExitConfirmOpen)
+        {
+            return;
+        }
+
         UpdatePlacementGuide();
         CheckTowerStability();
-
-        Keyboard keyboard = Keyboard.current;
 
         if (keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame))
         {
@@ -135,7 +147,7 @@ public class StartSession : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (!hasStarted || isRestarting || stackedRigidbodies.Count == 0)
+        if (!hasStarted || isRestarting || isExitConfirmOpen || stackedRigidbodies.Count == 0)
         {
             return;
         }
@@ -156,6 +168,7 @@ public class StartSession : MonoBehaviour
     {
         gameMode = selectedMode;
         hasStarted = true;
+        isExitConfirmOpen = false;
         StartNewGame();
     }
 
@@ -182,6 +195,30 @@ public class StartSession : MonoBehaviour
         hud.ShowReady();
 
         SpawnNextBlock();
+    }
+
+    private void OpenExitConfirmation()
+    {
+        isExitConfirmOpen = true;
+        Time.timeScale = 0f;
+        mainMenu.ShowExitConfirmation(ConfirmExitToModeMenu, CancelExitToModeMenu);
+    }
+
+    private void ConfirmExitToModeMenu()
+    {
+        Time.timeScale = 1f;
+        isExitConfirmOpen = false;
+        hasStarted = false;
+        EndRun();
+        ClearSpawnedBlocks();
+        hud.ShowReady();
+        mainMenu.Show(StartSelectedMode);
+    }
+
+    private void CancelExitToModeMenu()
+    {
+        isExitConfirmOpen = false;
+        Time.timeScale = 1f;
     }
 
     private void SpawnNextBlock()
