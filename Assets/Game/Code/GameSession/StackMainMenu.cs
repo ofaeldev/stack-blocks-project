@@ -1,6 +1,8 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 public class StackMainMenu : MonoBehaviour
@@ -10,6 +12,11 @@ public class StackMainMenu : MonoBehaviour
     private Text titleText;
     private Text optionText;
     private Text confirmText;
+    private Button relaxButton;
+    private Button hardcoreButton;
+    private Button physicsButton;
+    private Button confirmExitButton;
+    private Button continueButton;
     private Action<StackGameMode> onModeSelected;
     private Action onExitConfirmed;
     private Action onExitCancelled;
@@ -114,6 +121,8 @@ public class StackMainMenu : MonoBehaviour
 
     private void Build()
     {
+        EnsureEventSystem();
+
         Canvas canvas = gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 20;
@@ -139,18 +148,40 @@ public class StackMainMenu : MonoBehaviour
         Font font = Font.CreateDynamicFontFromOSFont(new[] { "Segoe UI", "Arial" }, 32);
 
         titleText = CreateText("Title", menuRoot.transform, font, 76, TextAnchor.MiddleCenter);
-        SetRect(titleText.rectTransform, new Vector2(0f, 205f), new Vector2(1000f, 110f), new Vector2(0.5f, 0.5f));
+        SetRect(titleText.rectTransform, new Vector2(0f, 280f), new Vector2(1000f, 110f), new Vector2(0.5f, 0.5f));
         titleText.text = "Stack Blocks";
 
-        optionText = CreateText("Options", menuRoot.transform, font, 34, TextAnchor.MiddleCenter);
-        SetRect(optionText.rectTransform, new Vector2(0f, -40f), new Vector2(1180f, 430f), new Vector2(0.5f, 0.5f));
+        optionText = CreateText("Options", menuRoot.transform, font, 28, TextAnchor.MiddleCenter);
+        SetRect(optionText.rectTransform, new Vector2(0f, 185f), new Vector2(1180f, 80f), new Vector2(0.5f, 0.5f));
         optionText.text =
-            "1  Relax\n" +
-            "Precise timing, clean tower, no physics collapse\n\n" +
-            "2  Hardcore\n" +
-            "One miss or unstable tower ends the run\n\n" +
-            "3  Physics Mode\n" +
-            "Arcade timing with living tower physics";
+            "Choose a mode. Shop and unlocks will live here later.";
+
+        relaxButton = CreateButton(
+            "RelaxButton",
+            menuRoot.transform,
+            font,
+            "Relax\nClean tower, no physics collapse",
+            new Vector2(0f, 60f),
+            () => SelectMode(StackGameMode.Relax)
+        );
+
+        hardcoreButton = CreateButton(
+            "HardcoreButton",
+            menuRoot.transform,
+            font,
+            "Hardcore\nOne miss or unstable tower ends the run",
+            new Vector2(0f, -80f),
+            () => SelectMode(StackGameMode.Hardcore)
+        );
+
+        physicsButton = CreateButton(
+            "PhysicsButton",
+            menuRoot.transform,
+            font,
+            "Physics Mode\nArcade timing with living tower physics",
+            new Vector2(0f, -220f),
+            () => SelectMode(StackGameMode.PhysicsMode)
+        );
 
         confirmRoot = new GameObject("ConfirmExitRoot");
         confirmRoot.transform.SetParent(transform, false);
@@ -163,15 +194,70 @@ public class StackMainMenu : MonoBehaviour
         confirmBackgroundRect.offsetMin = Vector2.zero;
         confirmBackgroundRect.offsetMax = Vector2.zero;
 
-        confirmText = CreateText("ConfirmText", confirmRoot.transform, font, 42, TextAnchor.MiddleCenter);
-        SetRect(confirmText.rectTransform, Vector2.zero, new Vector2(1120f, 360f), new Vector2(0.5f, 0.5f));
+        confirmText = CreateText("ConfirmText", confirmRoot.transform, font, 46, TextAnchor.MiddleCenter);
+        SetRect(confirmText.rectTransform, new Vector2(0f, 120f), new Vector2(1120f, 160f), new Vector2(0.5f, 0.5f));
         confirmText.text =
-            "Exit current mode?\n\n" +
-            "Enter / Space  Confirm\n" +
-            "Esc  Continue";
+            "Exit current mode?\nYour current run will end.";
+
+        confirmExitButton = CreateButton(
+            "ConfirmExitButton",
+            confirmRoot.transform,
+            font,
+            "Exit to Mode Menu",
+            new Vector2(0f, -40f),
+            ConfirmExit
+        );
+
+        continueButton = CreateButton(
+            "ContinueButton",
+            confirmRoot.transform,
+            font,
+            "Continue",
+            new Vector2(0f, -180f),
+            CancelExit
+        );
 
         menuRoot.SetActive(false);
         confirmRoot.SetActive(false);
+    }
+
+    private static void EnsureEventSystem()
+    {
+        if (FindFirstObjectByType<EventSystem>() != null)
+        {
+            return;
+        }
+
+        GameObject eventSystemObject = new("EventSystem");
+        eventSystemObject.AddComponent<EventSystem>();
+        eventSystemObject.AddComponent<InputSystemUIInputModule>();
+    }
+
+    private static Button CreateButton(string objectName, Transform parent, Font font, string label, Vector2 anchoredPosition, Action clicked)
+    {
+        GameObject buttonObject = new(objectName);
+        buttonObject.transform.SetParent(parent, false);
+
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = new Color(0.12f, 0.16f, 0.24f, 0.96f);
+
+        Button button = buttonObject.AddComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.normalColor = new Color(0.12f, 0.16f, 0.24f, 0.96f);
+        colors.highlightedColor = new Color(0.22f, 0.32f, 0.48f, 1f);
+        colors.pressedColor = new Color(0.08f, 0.11f, 0.16f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.colorMultiplier = 1f;
+        button.colors = colors;
+        button.onClick.AddListener(() => clicked?.Invoke());
+
+        SetRect(buttonObject.GetComponent<RectTransform>(), anchoredPosition, new Vector2(760f, 112f), new Vector2(0.5f, 0.5f));
+
+        Text buttonText = CreateText("Label", buttonObject.transform, font, 30, TextAnchor.MiddleCenter);
+        SetRect(buttonText.rectTransform, Vector2.zero, new Vector2(700f, 96f), new Vector2(0.5f, 0.5f));
+        buttonText.text = label;
+
+        return button;
     }
 
     private static Text CreateText(string objectName, Transform parent, Font font, int fontSize, TextAnchor alignment)

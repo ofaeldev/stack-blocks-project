@@ -118,20 +118,15 @@ public class StartSession : MonoBehaviour
 
     private void Update()
     {
-        if (!hasStarted || isRestarting || currentBlock == null)
-        {
-            return;
-        }
-
         Keyboard keyboard = Keyboard.current;
 
-        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+        if (hasStarted && !isRestarting && !isExitConfirmOpen && keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
         {
             OpenExitConfirmation();
             return;
         }
 
-        if (isExitConfirmOpen)
+        if (!hasStarted || isRestarting || isExitConfirmOpen || currentBlock == null)
         {
             return;
         }
@@ -175,7 +170,7 @@ public class StartSession : MonoBehaviour
     private void StartNewGame()
     {
         Time.timeScale = 1f;
-        ClearSpawnedBlocks();
+        ClearSpawnedBlocks(false);
 
         score = 0;
         totalScore = 0;
@@ -210,7 +205,7 @@ public class StartSession : MonoBehaviour
         isExitConfirmOpen = false;
         hasStarted = false;
         EndRun();
-        ClearSpawnedBlocks();
+        ClearSpawnedBlocks(true);
         hud.ShowReady();
         mainMenu.Show(StartSelectedMode);
     }
@@ -558,14 +553,31 @@ public class StartSession : MonoBehaviour
         StartNewGame();
     }
 
-    private void ClearSpawnedBlocks()
+    private void ClearSpawnedBlocks(bool destroyImmediate)
     {
+        HashSet<GameObject> blocksToDestroy = new();
+
         foreach (GameObject block in spawnedBlocks)
         {
             if (block != null)
             {
-                Destroy(block);
+                blocksToDestroy.Add(block);
             }
+        }
+
+        MovingBlock[] movingBlocks = FindObjectsByType<MovingBlock>(FindObjectsSortMode.None);
+
+        foreach (MovingBlock movingBlock in movingBlocks)
+        {
+            if (movingBlock != null && movingBlock.gameObject.scene.IsValid())
+            {
+                blocksToDestroy.Add(movingBlock.gameObject);
+            }
+        }
+
+        foreach (GameObject block in blocksToDestroy)
+        {
+            DestroyBlock(block, destroyImmediate);
         }
 
         spawnedBlocks.Clear();
@@ -576,5 +588,16 @@ public class StartSession : MonoBehaviour
         {
             placementGuide.SetVisible(false);
         }
+    }
+
+    private static void DestroyBlock(GameObject block, bool destroyImmediate)
+    {
+        if (destroyImmediate)
+        {
+            DestroyImmediate(block);
+            return;
+        }
+
+        Destroy(block);
     }
 }
