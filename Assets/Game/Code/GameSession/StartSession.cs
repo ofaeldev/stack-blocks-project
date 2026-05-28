@@ -26,7 +26,12 @@ public class StartSession : MonoBehaviour
     [SerializeField] private float windStrength = 0.08f;
     [SerializeField] private float windGrowthPerBlock = 0.012f;
     [SerializeField] private float windFrequency = 0.75f;
+    [SerializeField] private float stabilityGraceAfterPlacement = 0.55f;
+    [SerializeField] private float maxSafeTiltAngle = 24f;
+    [SerializeField] private float maxSafeDrift = 1.35f;
+    [SerializeField] private float fallenHeight = -1f;
     [SerializeField] private StackCameraController stackCamera;
+    [SerializeField] private StackHud hud;
 
     private GameObject currentBlock;
     private Transform lastStackedBlock;
@@ -36,6 +41,7 @@ public class StartSession : MonoBehaviour
     private Vector3 currentTargetPosition;
     private float currentPlacementTolerance;
     private float lastPlacementTime = -999f;
+    private float nextStabilityCheckTime;
     private int score;
     private int totalScore;
     private int comboStreak;
@@ -46,6 +52,16 @@ public class StartSession : MonoBehaviour
         if (stackCamera == null)
         {
             stackCamera = FindFirstObjectByType<StackCameraController>();
+        }
+
+        if (hud == null)
+        {
+            hud = FindFirstObjectByType<StackHud>();
+        }
+
+        if (hud == null)
+        {
+            hud = StackHud.Create();
         }
 
         placementGuide = PlacementGuide.Create(placementTolerance);
@@ -60,6 +76,7 @@ public class StartSession : MonoBehaviour
         }
 
         UpdatePlacementGuide();
+        CheckTowerStability();
 
         Keyboard keyboard = Keyboard.current;
 
@@ -96,6 +113,7 @@ public class StartSession : MonoBehaviour
         totalScore = 0;
         comboStreak = 0;
         lastPlacementTime = -999f;
+        nextStabilityCheckTime = float.PositiveInfinity;
         lastStackedBlock = null;
         isRestarting = false;
 
@@ -103,6 +121,9 @@ public class StartSession : MonoBehaviour
         {
             stackCamera.ResetCamera();
         }
+
+        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance());
+        hud.ShowReady();
 
         SpawnNextBlock();
     }
@@ -118,10 +139,11 @@ public class StartSession : MonoBehaviour
         spawnedBlocks.Add(currentBlock);
 
         MovingBlock movingBlock = currentBlock.GetComponent<MovingBlock>();
-        movingBlock.Initialize(movementAxis, GetCurrentMoveSpeed(), moveDistance * 2f);
+        movingBlock.Initialize(movementAxis, currentTargetPosition, GetCurrentMoveSpeed(), moveDistance);
 
         placementGuide.SetTarget(currentTargetPosition, currentPlacementTolerance, blockHeight);
         placementGuide.SetVisible(true);
+        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), currentPlacementTolerance);
     }
 
     private Vector3 GetNextTargetPosition()
@@ -147,6 +169,7 @@ public class StartSession : MonoBehaviour
         else
         {
             placementGuide.SetVisible(false);
+            hud.ShowDanger("Miss!");
             StartCoroutine(RestartAfterFall());
         }
     }
@@ -173,7 +196,8 @@ public class StartSession : MonoBehaviour
 
         lastStackedBlock = currentBlock.transform;
         score++;
-        RegisterScore(placementOffset);
+        int gainedScore = RegisterScore(placementOffset);
+        nextStabilityCheckTime = Time.time + stabilityGraceAfterPlacement;
         StartCoroutine(PulseBlock(currentBlock.transform));
 
         if (stackCamera != null)
@@ -181,6 +205,9 @@ public class StartSession : MonoBehaviour
             stackCamera.SetTargetHeight(targetPosition.y);
             stackCamera.AddImpact(cameraImpactStrength);
         }
+
+        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance());
+        hud.ShowPlacement(comboStreak > 1, gainedScore);
 
         Debug.Log($"Blocks: {score} | Score: {totalScore} | Combo: x{comboStreak}");
     }
@@ -204,7 +231,7 @@ public class StartSession : MonoBehaviour
         return blockRigidbody;
     }
 
-    private void RegisterScore(Vector3 placementOffset)
+    private int RegisterScore(Vector3 placementOffset)
     {
         float timeSinceLastPlacement = Time.time - lastPlacementTime;
         comboStreak = timeSinceLastPlacement <= comboWindow ? comboStreak + 1 : 1;
@@ -213,8 +240,11 @@ public class StartSession : MonoBehaviour
         float accuracy = 1f - Mathf.Clamp01(new Vector2(placementOffset.x, placementOffset.z).magnitude / currentPlacementTolerance);
         int comboBonus = Mathf.Max(0, comboStreak - 1) * 25;
         int accuracyBonus = Mathf.RoundToInt(baseScorePerBlock * accuracy);
+        int gainedScore = baseScorePerBlock + comboBonus + accuracyBonus;
 
-        totalScore += baseScorePerBlock + comboBonus + accuracyBonus;
+        totalScore += gainedScore;
+
+        return gainedScore;
     }
 
     private IEnumerator PulseBlock(Transform blockTransform)
@@ -260,8 +290,41 @@ public class StartSession : MonoBehaviour
         return Mathf.Max(minPlacementTolerance, placementTolerance - score * toleranceShrinkPerBlock);
     }
 
+    private void CheckTowerStability()
+    {
+        if (Time.time < nextStabilityCheckTime || stackedRigidbodies.Count == 0)
+        {
+            return;
+        }
+
+        foreach (Rigidbody blockRigidbody in stackedRigidbodies)
+        {
+            if (blockRigidbody == null)
+            {
+                continue;
+            }
+
+            float tiltAngle = Vector3.Angle(blockRigidbody.transform.up, Vector3.up);
+            Vector2 drift = new(blockRigidbody.position.x, blockRigidbody.position.z);
+
+            if (tiltAngle > maxSafeTiltAngle || drift.magnitude > maxSafeDrift || blockRigidbody.position.y < fallenHeight)
+            {
+                placementGuide.SetVisible(false);
+                hud.ShowDanger("Tower lost!");
+                Debug.Log($"Tower lost stability. Tilt: {tiltAngle:0.0}, Drift: {drift.magnitude:0.00}, Height: {blockRigidbody.position.y:0.00}");
+                StartCoroutine(RestartAfterFall());
+                return;
+            }
+        }
+    }
+
     private IEnumerator RestartAfterFall()
     {
+        if (isRestarting)
+        {
+            yield break;
+        }
+
         isRestarting = true;
 
         foreach (GameObject block in spawnedBlocks)

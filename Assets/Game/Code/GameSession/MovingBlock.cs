@@ -3,16 +3,16 @@ using UnityEngine;
 public class MovingBlock : MonoBehaviour
 {
     private Vector3 movementAxis = Vector3.right;
-    private Vector3 startPosition;
+    private Vector3 movementCenter;
     private float speed;
     private float travelDistance;
     private int direction = 1;
     private bool isMoving;
 
-    public void Initialize(Vector3 axis, float moveSpeed, float maxDistance)
+    public void Initialize(Vector3 axis, Vector3 centerPosition, float moveSpeed, float maxDistance)
     {
         movementAxis = axis.normalized;
-        startPosition = transform.position;
+        movementCenter = centerPosition;
         speed = moveSpeed;
         travelDistance = maxDistance;
         direction = 1;
@@ -28,8 +28,8 @@ public class MovingBlock : MonoBehaviour
 
         transform.position += movementAxis * direction * speed * Time.deltaTime;
 
-        Vector3 offsetFromStart = transform.position - startPosition;
-        float distanceOnAxis = Vector3.Dot(offsetFromStart, movementAxis);
+        Vector3 offsetFromCenter = transform.position - movementCenter;
+        float distanceOnAxis = Vector3.Dot(offsetFromCenter, movementAxis);
 
         if (Mathf.Abs(distanceOnAxis) >= travelDistance)
         {

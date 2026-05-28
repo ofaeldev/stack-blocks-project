@@ -7,6 +7,8 @@
 [Uu]ser[Ss]ettings/
 Assets/_Recovery/
 Assets/_Recovery.meta
+Assets/Screenshots/
+Assets/Screenshots.meta
 
 *.csproj
 *.sln
