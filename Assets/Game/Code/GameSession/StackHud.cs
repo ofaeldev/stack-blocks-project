@@ -11,6 +11,7 @@ public class StackHud : MonoBehaviour
     private Text scoreText;
     private Text comboText;
     private Text difficultyText;
+    private Text metaText;
     private Text messageText;
     private Coroutine messageRoutine;
 
@@ -44,19 +45,27 @@ public class StackHud : MonoBehaviour
         SetRect(comboText.rectTransform, new Vector2(28f, -82f), new Vector2(520f, 60f), new Vector2(0f, 1f), new Vector2(0f, 1f));
 
         difficultyText = CreateText("DifficultyText", transform, font, 24, TextAnchor.UpperRight);
-        SetRect(difficultyText.rectTransform, new Vector2(-28f, -28f), new Vector2(620f, 90f), new Vector2(1f, 1f), new Vector2(1f, 1f));
+        SetRect(difficultyText.rectTransform, new Vector2(-28f, -28f), new Vector2(680f, 110f), new Vector2(1f, 1f), new Vector2(1f, 1f));
+
+        metaText = CreateText("MetaText", transform, font, 22, TextAnchor.LowerLeft);
+        SetRect(metaText.rectTransform, new Vector2(28f, 24f), new Vector2(760f, 80f), new Vector2(0f, 0f), new Vector2(0f, 0f));
 
         messageText = CreateText("MessageText", transform, font, 56, TextAnchor.MiddleCenter);
         SetRect(messageText.rectTransform, Vector2.zero, new Vector2(900f, 140f), new Vector2(0.5f, 0.58f), new Vector2(0.5f, 0.5f));
         messageText.color = Color.clear;
     }
 
-    public void SetStats(int blocks, int score, int combo, float speed, float tolerance)
+    public void SetStats(int blocks, int score, int combo, float speed, float tolerance, string modeName, float balanceRisk, string biomeName)
     {
         scoreText.text = $"Score {score}\nBlocks {blocks}";
         comboText.text = combo > 1 ? $"Combo x{combo}" : "Combo x1";
         comboText.color = combo > 1 ? comboMessageColor : normalMessageColor;
-        difficultyText.text = $"Speed {speed:0.0}\nTolerance {tolerance:0.00}";
+        difficultyText.text = $"{modeName}\nSpeed {speed:0.0}\nTolerance {tolerance:0.00}\nBalance {balanceRisk:0%}\n{biomeName}";
+    }
+
+    public void SetMeta(StackProgression progression)
+    {
+        metaText.text = $"Best {progression.BestScore} | Coins {progression.Coins} | Level {progression.PlayerLevel} | Skins {progression.UnlockedSkinCount} | Themes {progression.UnlockedThemeCount}";
     }
 
     public void ShowPlacement(bool wasCombo, int gainedScore)

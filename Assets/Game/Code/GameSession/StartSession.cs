@@ -5,6 +5,14 @@ using System.Collections.Generic;
 
 public class StartSession : MonoBehaviour
 {
+    private enum GameMode
+    {
+        Relax,
+        Hardcore,
+        PhysicsMode
+    }
+
+    [SerializeField] private GameMode gameMode = GameMode.PhysicsMode;
     [SerializeField] private GameObject blockPrefab;
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private float blockHeight = 1f;
@@ -32,6 +40,8 @@ public class StartSession : MonoBehaviour
     [SerializeField] private float fallenHeight = -1f;
     [SerializeField] private StackCameraController stackCamera;
     [SerializeField] private StackHud hud;
+    [SerializeField] private StackFeedbackController feedback;
+    [SerializeField] private StackBiomeController biomeController;
 
     private GameObject currentBlock;
     private Transform lastStackedBlock;
@@ -45,10 +55,14 @@ public class StartSession : MonoBehaviour
     private int score;
     private int totalScore;
     private int comboStreak;
+    private StackProgression progression;
+    private string currentBiomeName = "City";
     private bool isRestarting;
 
     private void Start()
     {
+        progression = StackProgression.Load();
+
         if (stackCamera == null)
         {
             stackCamera = FindFirstObjectByType<StackCameraController>();
@@ -62,6 +76,22 @@ public class StartSession : MonoBehaviour
         if (hud == null)
         {
             hud = StackHud.Create();
+        }
+
+        if (feedback == null)
+        {
+            feedback = FindFirstObjectByType<StackFeedbackController>();
+        }
+
+        if (feedback == null)
+        {
+            feedback = StackFeedbackController.Create();
+        }
+
+        if (biomeController == null)
+        {
+            Camera sceneCamera = stackCamera != null ? stackCamera.GetComponent<Camera>() : Camera.main;
+            biomeController = StackBiomeController.Create(sceneCamera);
         }
 
         placementGuide = PlacementGuide.Create(placementTolerance);
@@ -79,6 +109,11 @@ public class StartSession : MonoBehaviour
         CheckTowerStability();
 
         Keyboard keyboard = Keyboard.current;
+
+        if (keyboard != null)
+        {
+            HandleModeHotkeys(keyboard);
+        }
 
         if (keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame))
         {
@@ -122,7 +157,8 @@ public class StartSession : MonoBehaviour
             stackCamera.ResetCamera();
         }
 
-        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance());
+        currentBiomeName = biomeController != null ? biomeController.UpdateForBlocks(0) : "City";
+        UpdateHud();
         hud.ShowReady();
 
         SpawnNextBlock();
@@ -143,7 +179,7 @@ public class StartSession : MonoBehaviour
 
         placementGuide.SetTarget(currentTargetPosition, currentPlacementTolerance, blockHeight);
         placementGuide.SetVisible(true);
-        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), currentPlacementTolerance);
+        UpdateHud();
     }
 
     private Vector3 GetNextTargetPosition()
@@ -170,7 +206,8 @@ public class StartSession : MonoBehaviour
         {
             placementGuide.SetVisible(false);
             hud.ShowDanger("Miss!");
-            StartCoroutine(RestartAfterFall());
+            feedback.PlayDanger(currentBlock.transform.position);
+            HandleFailure("Miss!");
         }
     }
 
@@ -199,6 +236,8 @@ public class StartSession : MonoBehaviour
         int gainedScore = RegisterScore(placementOffset);
         nextStabilityCheckTime = Time.time + stabilityGraceAfterPlacement;
         StartCoroutine(PulseBlock(currentBlock.transform));
+        currentBiomeName = biomeController != null ? biomeController.UpdateForBlocks(score) : currentBiomeName;
+        feedback.PlayPlacement(currentBlock.transform.position, comboStreak);
 
         if (stackCamera != null)
         {
@@ -206,7 +245,7 @@ public class StartSession : MonoBehaviour
             stackCamera.AddImpact(cameraImpactStrength);
         }
 
-        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance());
+        UpdateHud();
         hud.ShowPlacement(comboStreak > 1, gainedScore);
 
         Debug.Log($"Blocks: {score} | Score: {totalScore} | Combo: x{comboStreak}");
@@ -292,6 +331,11 @@ public class StartSession : MonoBehaviour
 
     private void CheckTowerStability()
     {
+        if (gameMode == GameMode.Relax)
+        {
+            return;
+        }
+
         if (Time.time < nextStabilityCheckTime || stackedRigidbodies.Count == 0)
         {
             return;
@@ -311,11 +355,97 @@ public class StartSession : MonoBehaviour
             {
                 placementGuide.SetVisible(false);
                 hud.ShowDanger("Tower lost!");
+                feedback.PlayDanger(blockRigidbody.position);
                 Debug.Log($"Tower lost stability. Tilt: {tiltAngle:0.0}, Drift: {drift.magnitude:0.00}, Height: {blockRigidbody.position.y:0.00}");
-                StartCoroutine(RestartAfterFall());
+                HandleFailure("Tower lost!");
                 return;
             }
         }
+    }
+
+    private void HandleFailure(string reason)
+    {
+        if (gameMode == GameMode.Relax)
+        {
+            hud.ShowDanger($"{reason} Relax saved");
+            RecoverRelaxMode();
+            return;
+        }
+
+        EndRun();
+        StartCoroutine(RestartAfterFall());
+    }
+
+    private void RecoverRelaxMode()
+    {
+        if (currentBlock != null)
+        {
+            Destroy(currentBlock);
+            spawnedBlocks.Remove(currentBlock);
+            currentBlock = null;
+        }
+
+        comboStreak = 0;
+        SpawnNextBlock();
+    }
+
+    private void EndRun()
+    {
+        progression.RegisterRun(totalScore, score);
+        UpdateHud();
+    }
+
+    private void UpdateHud()
+    {
+        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance(), gameMode.ToString(), GetBalanceRisk(), currentBiomeName);
+        hud.SetMeta(progression);
+    }
+
+    private float GetBalanceRisk()
+    {
+        float worstRisk = 0f;
+
+        foreach (Rigidbody blockRigidbody in stackedRigidbodies)
+        {
+            if (blockRigidbody == null)
+            {
+                continue;
+            }
+
+            float tiltRisk = Vector3.Angle(blockRigidbody.transform.up, Vector3.up) / maxSafeTiltAngle;
+            float driftRisk = new Vector2(blockRigidbody.position.x, blockRigidbody.position.z).magnitude / maxSafeDrift;
+            worstRisk = Mathf.Max(worstRisk, tiltRisk, driftRisk);
+        }
+
+        return Mathf.Clamp01(worstRisk);
+    }
+
+    private void HandleModeHotkeys(Keyboard keyboard)
+    {
+        if (keyboard.digit1Key.wasPressedThisFrame)
+        {
+            SetMode(GameMode.Relax);
+        }
+        else if (keyboard.digit2Key.wasPressedThisFrame)
+        {
+            SetMode(GameMode.Hardcore);
+        }
+        else if (keyboard.digit3Key.wasPressedThisFrame)
+        {
+            SetMode(GameMode.PhysicsMode);
+        }
+    }
+
+    private void SetMode(GameMode mode)
+    {
+        if (gameMode == mode)
+        {
+            return;
+        }
+
+        gameMode = mode;
+        hud.ShowReady();
+        UpdateHud();
     }
 
     private IEnumerator RestartAfterFall()
