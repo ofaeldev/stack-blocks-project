@@ -309,6 +309,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StartSession
   blockPrefab: {fileID: 7589529433640163654, guid: c943c098d285a124aa302ececb179c09, type: 3}
   spawnPoint: {fileID: 12955152}
+  blockHeight: 1
+  moveSpeed: 3
+  moveDistance: 2.5
+  placementTolerance: 0.45
+  restartDelay: 1.5
+  stackCamera: {fileID: 0}
 --- !u!1 &2087789299
 GameObject:
   m_ObjectHideFlags: 0
@@ -321,6 +327,7 @@ GameObject:
   - component: {fileID: 2087789302}
   - component: {fileID: 2087789301}
   - component: {fileID: 2087789300}
+  - component: {fileID: 2087789304}
   m_Layer: 0
   m_Name: Camera
   m_TagString: Untagged
@@ -439,13 +446,29 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2087789299}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.13052616, y: 0, z: 0, w: 0.9914449}
-  m_LocalPosition: {x: 0, y: 2, z: -5}
+  m_LocalRotation: {x: 0.3826821, y: -0.10757022, z: 0.014431329, w: 0.91748285}
+  m_LocalPosition: {x: 3.05, y: 6.72, z: -6.54}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 15, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 44.855, y: -15.24, z: -4.519}
+--- !u!114 &2087789304
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2087789299}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2bdd7cba50e80dd4d971b8769dcbd11a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StackCameraController
+  heightBeforeMoving: 2
+  verticalFollowMultiplier: 0.75
+  positionSmoothTime: 0.25
+  lookAtSmoothSpeed: 6
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

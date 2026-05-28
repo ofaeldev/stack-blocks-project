@@ -12,6 +12,7 @@ public class StartSession : MonoBehaviour
     [SerializeField] private float moveDistance = 2.5f;
     [SerializeField] private float placementTolerance = 0.45f;
     [SerializeField] private float restartDelay = 1.5f;
+    [SerializeField] private StackCameraController stackCamera;
 
     private GameObject currentBlock;
     private Transform lastStackedBlock;
@@ -21,6 +22,11 @@ public class StartSession : MonoBehaviour
 
     private void Start()
     {
+        if (stackCamera == null)
+        {
+            stackCamera = FindFirstObjectByType<StackCameraController>();
+        }
+
         StartNewGame();
     }
 
@@ -46,6 +52,11 @@ public class StartSession : MonoBehaviour
         score = 0;
         lastStackedBlock = null;
         isRestarting = false;
+
+        if (stackCamera != null)
+        {
+            stackCamera.ResetCamera();
+        }
 
         SpawnNextBlock();
     }
@@ -104,6 +115,11 @@ public class StartSession : MonoBehaviour
         currentBlock.transform.position = targetPosition;
         lastStackedBlock = currentBlock.transform;
         score++;
+
+        if (stackCamera != null)
+        {
+            stackCamera.SetTargetHeight(targetPosition.y);
+        }
 
         Debug.Log($"Score: {score}");
     }
