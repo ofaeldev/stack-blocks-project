@@ -18,6 +18,7 @@ public class StackMainMenu : MonoBehaviour
     private Button physicsButton;
     private Button shopButton;
     private Button backFromShopButton;
+    private Button restorePurchasesButton;
     private Text shopTitleText;
     private Text shopItemsText;
     private Text shopStatusText;
@@ -92,7 +93,7 @@ public class StackMainMenu : MonoBehaviour
         onProgressionChanged = progressionChangedCallback;
         shopService = new StackShopService(progression);
         iapManager = StackIapManager.GetOrCreate();
-        iapManager.Initialize(progression, onProgressionChanged, SetShopStatus);
+        iapManager.Initialize(progression, HandleIapStatusChanged, HandleIapStatusChanged);
         isShowing = true;
         isShowingShop = false;
         isConfirmingExit = false;
@@ -167,6 +168,11 @@ public class StackMainMenu : MonoBehaviour
         StackShopProduct product = StackShopCatalog.CoinPackProducts[index];
         iapManager.Purchase(product.RealMoneyProductId);
         RefreshShop();
+    }
+
+    private void RestorePurchases()
+    {
+        iapManager.RestorePurchases();
     }
 
     private void ConfirmExit()
@@ -342,12 +348,21 @@ public class StackMainMenu : MonoBehaviour
         shopStatusText = CreateText("ShopStatus", shopRoot.transform, font, 24, TextAnchor.MiddleCenter);
         SetRect(shopStatusText.rectTransform, new Vector2(0f, -250f), new Vector2(1200f, 80f), new Vector2(0.5f, 0.5f));
 
+        restorePurchasesButton = CreateButton(
+            "RestorePurchasesButton",
+            shopRoot.transform,
+            font,
+            "Restore Purchases",
+            new Vector2(-250f, -420f),
+            RestorePurchases
+        );
+
         backFromShopButton = CreateButton(
             "BackFromShopButton",
             shopRoot.transform,
             font,
             "Back",
-            new Vector2(0f, -420f),
+            new Vector2(520f, -420f),
             BackToMainMenu
         );
 
@@ -393,8 +408,21 @@ public class StackMainMenu : MonoBehaviour
             }
 
             Text label = button.GetComponentInChildren<Text>();
-            label.text = $"{product.Title}\n{product.CoinGrant} coins";
+            string price = iapManager != null ? iapManager.GetLocalizedPrice(product.RealMoneyProductId) : "Loading";
+            label.text = $"{product.Title}\n{product.CoinGrant} coins  {price}";
         }
+    }
+
+    private void HandleIapStatusChanged()
+    {
+        onProgressionChanged?.Invoke();
+        RefreshShop();
+    }
+
+    private void HandleIapStatusChanged(string message)
+    {
+        SetShopStatus(message);
+        RefreshShop();
     }
 
     private Button FindShopButton(string buttonName)

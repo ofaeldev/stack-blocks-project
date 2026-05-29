@@ -64,6 +64,23 @@ public class StackIapManager : MonoBehaviour
         storeController.PurchaseProduct(product);
     }
 
+    public string GetLocalizedPrice(string productId)
+    {
+        Product product = GetProduct(productId);
+
+        if (product == null || string.IsNullOrEmpty(product.metadata.localizedPriceString))
+        {
+            return isReady ? "Unavailable" : "Loading";
+        }
+
+        return product.metadata.localizedPriceString;
+    }
+
+    public bool IsProductLoaded(string productId)
+    {
+        return GetProduct(productId) != null;
+    }
+
     public void RestorePurchases()
     {
         if (!isReady || storeController == null)
@@ -233,6 +250,16 @@ public class StackIapManager : MonoBehaviour
     private static Product GetFirstProduct(Order order)
     {
         return order.CartOrdered.Items().FirstOrDefault()?.Product;
+    }
+
+    private Product GetProduct(string productId)
+    {
+        if (storeController == null)
+        {
+            return null;
+        }
+
+        return storeController.GetProducts().FirstOrDefault(storeProduct => storeProduct.definition.id == productId);
     }
 
     private static string GetProductId(Order order)
