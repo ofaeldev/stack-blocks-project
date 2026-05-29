@@ -55,11 +55,13 @@ public class StackHud : MonoBehaviour
         messageText.color = Color.clear;
     }
 
-    public void SetStats(int blocks, int score, int combo, float speed, float tolerance, string modeName, float balanceRisk, string biomeName)
+    public void SetStats(int blocks, int score, int combo, int perfectStreak, float speed, float tolerance, string modeName, float balanceRisk, string biomeName)
     {
         scoreText.text = $"Score {score}\nBlocks {blocks}";
-        comboText.text = combo > 1 ? $"Combo x{combo}" : "Combo x1";
-        comboText.color = combo > 1 ? comboMessageColor : normalMessageColor;
+        string comboLine = combo > 1 ? $"Combo x{combo}" : "Combo x1";
+        string perfectLine = perfectStreak > 0 ? $"\nPerfect x{perfectStreak}" : string.Empty;
+        comboText.text = comboLine + perfectLine;
+        comboText.color = combo > 1 || perfectStreak > 0 ? comboMessageColor : normalMessageColor;
         difficultyText.text = $"{modeName}\nSpeed {speed:0.0}\nTolerance {tolerance:0.00}\nBalance {balanceRisk:0%}\n{biomeName}";
     }
 

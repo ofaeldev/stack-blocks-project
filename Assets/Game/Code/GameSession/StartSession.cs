@@ -26,6 +26,7 @@ public class StartSession : MonoBehaviour
     [SerializeField] private float missCameraImpactStrength = 0.22f;
     [SerializeField] private float perfectDistance = 0.06f;
     [SerializeField] private float perfectHitStopDuration = 0.045f;
+    [SerializeField] private float minimumBlockSize = 0.18f;
     [SerializeField] private float placedBlockMass = 2f;
     [SerializeField] private float placementTorqueImpulse = 2.5f;
     [SerializeField] private float windStrength = 0.08f;
@@ -47,12 +48,14 @@ public class StartSession : MonoBehaviour
     private readonly List<Rigidbody> stackedRigidbodies = new();
     private PlacementGuide placementGuide;
     private Vector3 currentTargetPosition;
+    private Vector3 currentMovementAxis;
     private float currentPlacementTolerance;
     private float lastPlacementTime = -999f;
     private float nextStabilityCheckTime;
     private int score;
     private int totalScore;
     private int comboStreak;
+    private int perfectStreak;
     private StackProgression progression;
     private string currentBiomeName = "City";
     private bool hasStarted;
@@ -108,7 +111,7 @@ public class StartSession : MonoBehaviour
         placementGuide = PlacementGuide.Create(placementTolerance);
         placementGuide.SetVisible(false);
         hud.SetMeta(progression);
-        mainMenu.Show(StartSelectedMode);
+        mainMenu.Show(StartSelectedMode, progression, UpdateHud);
     }
 
     private void OnDisable()
@@ -175,6 +178,7 @@ public class StartSession : MonoBehaviour
         score = 0;
         totalScore = 0;
         comboStreak = 0;
+        perfectStreak = 0;
         lastPlacementTime = -999f;
         nextStabilityCheckTime = float.PositiveInfinity;
         lastStackedBlock = null;
@@ -207,7 +211,7 @@ public class StartSession : MonoBehaviour
         EndRun();
         ClearSpawnedBlocks(true);
         hud.ShowReady();
-        mainMenu.Show(StartSelectedMode);
+        mainMenu.Show(StartSelectedMode, progression, UpdateHud);
     }
 
     private void CancelExitToModeMenu()
@@ -220,14 +224,16 @@ public class StartSession : MonoBehaviour
     {
         currentTargetPosition = GetNextTargetPosition();
         currentPlacementTolerance = GetCurrentPlacementTolerance();
-        Vector3 movementAxis = score % 2 == 0 ? Vector3.right : Vector3.forward;
-        Vector3 spawnPosition = currentTargetPosition - movementAxis * moveDistance;
+        currentMovementAxis = score % 2 == 0 ? Vector3.right : Vector3.forward;
+        Vector3 spawnPosition = currentTargetPosition - currentMovementAxis * moveDistance;
 
         currentBlock = Instantiate(blockPrefab, spawnPosition, spawnPoint.rotation);
+        currentBlock.transform.localScale = lastStackedBlock == null ? blockPrefab.transform.localScale : lastStackedBlock.localScale;
+        ApplySelectedSkin(currentBlock);
         spawnedBlocks.Add(currentBlock);
 
         MovingBlock movingBlock = currentBlock.GetComponent<MovingBlock>();
-        movingBlock.Initialize(movementAxis, currentTargetPosition, GetCurrentMoveSpeed(), moveDistance);
+        movingBlock.Initialize(currentMovementAxis, currentTargetPosition, GetCurrentMoveSpeed(), moveDistance);
 
         placementGuide.SetTarget(currentTargetPosition, currentPlacementTolerance, blockHeight);
         placementGuide.SetVisible(true);
@@ -249,7 +255,7 @@ public class StartSession : MonoBehaviour
         MovingBlock movingBlock = currentBlock.GetComponent<MovingBlock>();
         movingBlock.Stop();
 
-        if (IsInsidePlacementTolerance(currentBlock.transform.position, currentTargetPosition))
+        if (IsPlacementSuccessful(currentBlock.transform.position, currentTargetPosition))
         {
             PlaceBlock(currentTargetPosition);
             SpawnNextBlock();
@@ -267,6 +273,21 @@ public class StartSession : MonoBehaviour
         }
     }
 
+    private bool IsPlacementSuccessful(Vector3 blockPosition, Vector3 targetPosition)
+    {
+        if (gameMode != StackGameMode.Relax)
+        {
+            float offset = Mathf.Abs(Vector3.Dot(blockPosition - targetPosition, currentMovementAxis));
+            float blockSize = GetAxisSize(currentBlock.transform.localScale, currentMovementAxis);
+            return blockSize - offset >= minimumBlockSize;
+        }
+
+        Vector2 blockXZ = new(blockPosition.x, blockPosition.z);
+        Vector2 targetXZ = new(targetPosition.x, targetPosition.z);
+
+        return Vector2.Distance(blockXZ, targetXZ) <= currentPlacementTolerance;
+    }
+
     private bool IsInsidePlacementTolerance(Vector3 blockPosition, Vector3 targetPosition)
     {
         Vector2 blockXZ = new(blockPosition.x, blockPosition.z);
@@ -277,14 +298,21 @@ public class StartSession : MonoBehaviour
 
     private void PlaceBlock(Vector3 targetPosition)
     {
-        Vector3 placementOffset = currentBlock.transform.position - targetPosition;
+        Vector3 timingOffset = currentBlock.transform.position - targetPosition;
+
+        if (gameMode != StackGameMode.Relax)
+        {
+            CutCurrentBlock(targetPosition, timingOffset);
+        }
+
+        Vector3 physicsOffset = currentBlock.transform.position - targetPosition;
         currentBlock.transform.position = new Vector3(
             currentBlock.transform.position.x,
             targetPosition.y,
             currentBlock.transform.position.z
         );
 
-        Rigidbody placedRigidbody = AddPlacedBlockPhysics(currentBlock, placementOffset);
+        Rigidbody placedRigidbody = AddPlacedBlockPhysics(currentBlock, physicsOffset);
 
         if (placedRigidbody != null)
         {
@@ -293,9 +321,10 @@ public class StartSession : MonoBehaviour
 
         lastStackedBlock = currentBlock.transform;
         score++;
-        float placementDistance = new Vector2(placementOffset.x, placementOffset.z).magnitude;
+        float placementDistance = new Vector2(timingOffset.x, timingOffset.z).magnitude;
         float accuracy = 1f - Mathf.Clamp01(placementDistance / currentPlacementTolerance);
         bool isPerfect = placementDistance <= perfectDistance;
+        perfectStreak = isPerfect ? perfectStreak + 1 : 0;
         int gainedScore = RegisterScore(accuracy, isPerfect);
         nextStabilityCheckTime = Time.time + stabilityGraceAfterPlacement;
         StartCoroutine(PulseBlock(currentBlock.transform));
@@ -316,7 +345,7 @@ public class StartSession : MonoBehaviour
         UpdateHud();
         hud.ShowPlacement(comboStreak > 1, gainedScore, isPerfect, GetPrecisionLabel(accuracy));
 
-        Debug.Log($"Blocks: {score} | Score: {totalScore} | Combo: x{comboStreak}");
+        Debug.Log($"Blocks: {score} | Score: {totalScore} | Combo: x{comboStreak} | Perfect: x{perfectStreak}");
     }
 
     private Rigidbody AddPlacedBlockPhysics(GameObject block, Vector3 placementOffset)
@@ -344,6 +373,67 @@ public class StartSession : MonoBehaviour
         return blockRigidbody;
     }
 
+    private void CutCurrentBlock(Vector3 targetPosition, Vector3 placementOffset)
+    {
+        float offsetOnAxis = Vector3.Dot(placementOffset, currentMovementAxis);
+        float blockSize = GetAxisSize(currentBlock.transform.localScale, currentMovementAxis);
+        float overlapSize = Mathf.Max(minimumBlockSize, blockSize - Mathf.Abs(offsetOnAxis));
+        float cutSize = blockSize - overlapSize;
+
+        Vector3 placedPosition = targetPosition + currentMovementAxis * (offsetOnAxis * 0.5f);
+        Vector3 placedScale = currentBlock.transform.localScale;
+        SetAxisSize(ref placedScale, currentMovementAxis, overlapSize);
+        currentBlock.transform.position = placedPosition;
+        currentBlock.transform.localScale = placedScale;
+
+        if (cutSize > 0.01f)
+        {
+            float cutDirection = Mathf.Sign(offsetOnAxis);
+            Vector3 cutPosition = targetPosition + currentMovementAxis * (offsetOnAxis * 0.5f + cutDirection * (overlapSize * 0.5f + cutSize * 0.5f));
+            Vector3 cutScale = placedScale;
+            SetAxisSize(ref cutScale, currentMovementAxis, cutSize);
+
+            GameObject cutPiece = Instantiate(blockPrefab, cutPosition, currentBlock.transform.rotation);
+            cutPiece.name = "CutPiece";
+            cutPiece.transform.localScale = cutScale;
+            ApplySelectedSkin(cutPiece);
+
+            Rigidbody cutRigidbody = cutPiece.AddComponent<Rigidbody>();
+            cutRigidbody.mass = Mathf.Max(0.25f, placedBlockMass * 0.5f);
+            cutRigidbody.AddForce(currentMovementAxis * cutDirection * 1.25f + Vector3.down * 0.25f, ForceMode.Impulse);
+            Destroy(cutPiece, 2.5f);
+        }
+
+    }
+
+    private void ApplySelectedSkin(GameObject block)
+    {
+        Renderer blockRenderer = block.GetComponent<Renderer>();
+
+        if (blockRenderer == null)
+        {
+            return;
+        }
+
+        blockRenderer.material.color = StackSkinLibrary.GetColor(progression.SelectedSkinId);
+    }
+
+    private static float GetAxisSize(Vector3 scale, Vector3 axis)
+    {
+        return Mathf.Abs(axis.x) > 0.5f ? scale.x : scale.z;
+    }
+
+    private static void SetAxisSize(ref Vector3 scale, Vector3 axis, float size)
+    {
+        if (Mathf.Abs(axis.x) > 0.5f)
+        {
+            scale.x = size;
+            return;
+        }
+
+        scale.z = size;
+    }
+
     private int RegisterScore(float accuracy, bool isPerfect)
     {
         float timeSinceLastPlacement = Time.time - lastPlacementTime;
@@ -353,7 +443,8 @@ public class StartSession : MonoBehaviour
         int comboBonus = Mathf.Max(0, comboStreak - 1) * 25;
         int accuracyBonus = Mathf.RoundToInt(baseScorePerBlock * accuracy);
         int perfectBonus = isPerfect ? baseScorePerBlock : 0;
-        int gainedScore = baseScorePerBlock + comboBonus + accuracyBonus + perfectBonus;
+        int perfectStreakBonus = isPerfect ? perfectStreak * 50 : 0;
+        int gainedScore = baseScorePerBlock + comboBonus + accuracyBonus + perfectBonus + perfectStreakBonus;
 
         totalScore += gainedScore;
 
@@ -508,7 +599,7 @@ public class StartSession : MonoBehaviour
 
     private void UpdateHud()
     {
-        hud.SetStats(score, totalScore, comboStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance(), gameMode.ToString(), GetBalanceRisk(), currentBiomeName);
+        hud.SetStats(score, totalScore, comboStreak, perfectStreak, GetCurrentMoveSpeed(), GetCurrentPlacementTolerance(), gameMode.ToString(), GetBalanceRisk(), currentBiomeName);
         hud.SetMeta(progression);
     }
 

@@ -8,6 +8,7 @@ using UnityEngine.UI;
 public class StackMainMenu : MonoBehaviour
 {
     private GameObject menuRoot;
+    private GameObject shopRoot;
     private GameObject confirmRoot;
     private Text titleText;
     private Text optionText;
@@ -15,12 +16,19 @@ public class StackMainMenu : MonoBehaviour
     private Button relaxButton;
     private Button hardcoreButton;
     private Button physicsButton;
+    private Button shopButton;
+    private Button backFromShopButton;
+    private Text shopTitleText;
+    private Text shopItemsText;
     private Button confirmExitButton;
     private Button continueButton;
     private Action<StackGameMode> onModeSelected;
+    private Action onProgressionChanged;
     private Action onExitConfirmed;
     private Action onExitCancelled;
+    private StackProgression progression;
     private bool isShowing;
+    private bool isShowingShop;
     private bool isConfirmingExit;
 
     public static StackMainMenu Create()
@@ -34,7 +42,7 @@ public class StackMainMenu : MonoBehaviour
 
     private void Update()
     {
-        if (!isShowing && !isConfirmingExit)
+        if (!isShowing && !isShowingShop && !isConfirmingExit)
         {
             return;
         }
@@ -74,13 +82,18 @@ public class StackMainMenu : MonoBehaviour
         }
     }
 
-    public void Show(Action<StackGameMode> selectedModeCallback)
+    public void Show(Action<StackGameMode> selectedModeCallback, StackProgression stackProgression, Action progressionChangedCallback)
     {
         onModeSelected = selectedModeCallback;
+        progression = stackProgression;
+        onProgressionChanged = progressionChangedCallback;
         isShowing = true;
+        isShowingShop = false;
         isConfirmingExit = false;
         menuRoot.SetActive(true);
+        shopRoot.SetActive(false);
         confirmRoot.SetActive(false);
+        RefreshShop();
     }
 
     public void ShowExitConfirmation(Action confirmedCallback, Action cancelledCallback)
@@ -88,16 +101,20 @@ public class StackMainMenu : MonoBehaviour
         onExitConfirmed = confirmedCallback;
         onExitCancelled = cancelledCallback;
         isShowing = false;
+        isShowingShop = false;
         isConfirmingExit = true;
         menuRoot.SetActive(false);
+        shopRoot.SetActive(false);
         confirmRoot.SetActive(true);
     }
 
     public void Hide()
     {
         isShowing = false;
+        isShowingShop = false;
         isConfirmingExit = false;
         menuRoot.SetActive(false);
+        shopRoot.SetActive(false);
         confirmRoot.SetActive(false);
     }
 
@@ -105,6 +122,39 @@ public class StackMainMenu : MonoBehaviour
     {
         Hide();
         onModeSelected?.Invoke(mode);
+    }
+
+    private void ShowShop()
+    {
+        isShowing = false;
+        isShowingShop = true;
+        menuRoot.SetActive(false);
+        shopRoot.SetActive(true);
+        confirmRoot.SetActive(false);
+        RefreshShop();
+    }
+
+    private void BackToMainMenu()
+    {
+        isShowing = true;
+        isShowingShop = false;
+        menuRoot.SetActive(true);
+        shopRoot.SetActive(false);
+        RefreshShop();
+    }
+
+    private void BuyOrSelectSkin(int index)
+    {
+        string skinId = StackSkinLibrary.SkinIds[index];
+        int cost = StackSkinLibrary.SkinCosts[index];
+
+        if (progression.TryUnlockSkin(skinId, cost))
+        {
+            progression.SelectSkin(skinId);
+            onProgressionChanged?.Invoke();
+        }
+
+        RefreshShop();
     }
 
     private void ConfirmExit()
@@ -183,6 +233,15 @@ public class StackMainMenu : MonoBehaviour
             () => SelectMode(StackGameMode.PhysicsMode)
         );
 
+        shopButton = CreateButton(
+            "ShopButton",
+            menuRoot.transform,
+            font,
+            "Shop\nSkins and upgrades",
+            new Vector2(0f, -360f),
+            ShowShop
+        );
+
         confirmRoot = new GameObject("ConfirmExitRoot");
         confirmRoot.transform.SetParent(transform, false);
 
@@ -219,6 +278,80 @@ public class StackMainMenu : MonoBehaviour
 
         menuRoot.SetActive(false);
         confirmRoot.SetActive(false);
+
+        shopRoot = new GameObject("ShopRoot");
+        shopRoot.transform.SetParent(transform, false);
+
+        Image shopBackground = shopRoot.AddComponent<Image>();
+        shopBackground.color = new Color(0.025f, 0.03f, 0.055f, 0.94f);
+        RectTransform shopBackgroundRect = shopBackground.rectTransform;
+        shopBackgroundRect.anchorMin = Vector2.zero;
+        shopBackgroundRect.anchorMax = Vector2.one;
+        shopBackgroundRect.offsetMin = Vector2.zero;
+        shopBackgroundRect.offsetMax = Vector2.zero;
+
+        shopTitleText = CreateText("ShopTitle", shopRoot.transform, font, 58, TextAnchor.MiddleCenter);
+        SetRect(shopTitleText.rectTransform, new Vector2(0f, 310f), new Vector2(1000f, 90f), new Vector2(0.5f, 0.5f));
+
+        shopItemsText = CreateText("ShopItems", shopRoot.transform, font, 26, TextAnchor.MiddleCenter);
+        SetRect(shopItemsText.rectTransform, new Vector2(0f, 220f), new Vector2(1100f, 70f), new Vector2(0.5f, 0.5f));
+
+        for (int i = 0; i < StackSkinLibrary.SkinIds.Length; i++)
+        {
+            int skinIndex = i;
+            Button skinButton = CreateButton(
+                $"SkinButton_{StackSkinLibrary.SkinIds[i]}",
+                shopRoot.transform,
+                font,
+                StackSkinLibrary.SkinNames[i],
+                new Vector2(0f, 80f - i * 115f),
+                () => BuyOrSelectSkin(skinIndex)
+            );
+
+            Image skinImage = skinButton.GetComponent<Image>();
+            skinImage.color = StackSkinLibrary.GetColor(StackSkinLibrary.SkinIds[i]);
+        }
+
+        backFromShopButton = CreateButton(
+            "BackFromShopButton",
+            shopRoot.transform,
+            font,
+            "Back",
+            new Vector2(0f, -420f),
+            BackToMainMenu
+        );
+
+        shopRoot.SetActive(false);
+    }
+
+    private void RefreshShop()
+    {
+        if (progression == null || shopTitleText == null || shopItemsText == null)
+        {
+            return;
+        }
+
+        shopTitleText.text = $"Shop  Coins {progression.Coins}";
+        shopItemsText.text = $"Selected: {progression.SelectedSkinId}";
+
+        Button[] buttons = shopRoot.GetComponentsInChildren<Button>(true);
+
+        foreach (Button button in buttons)
+        {
+            if (!button.name.StartsWith("SkinButton_"))
+            {
+                continue;
+            }
+
+            string skinId = button.name.Replace("SkinButton_", string.Empty);
+            int index = Array.IndexOf(StackSkinLibrary.SkinIds, skinId);
+            bool unlocked = progression.IsSkinUnlocked(skinId);
+            bool selected = progression.SelectedSkinId == skinId;
+            string status = selected ? "Selected" : unlocked ? "Select" : $"{StackSkinLibrary.SkinCosts[index]} coins";
+
+            Text label = button.GetComponentInChildren<Text>();
+            label.text = $"{StackSkinLibrary.SkinNames[index]}\n{status}";
+        }
     }
 
     private static void EnsureEventSystem()
@@ -251,10 +384,10 @@ public class StackMainMenu : MonoBehaviour
         button.colors = colors;
         button.onClick.AddListener(() => clicked?.Invoke());
 
-        SetRect(buttonObject.GetComponent<RectTransform>(), anchoredPosition, new Vector2(760f, 112f), new Vector2(0.5f, 0.5f));
+        SetRect(buttonObject.GetComponent<RectTransform>(), anchoredPosition, new Vector2(760f, 98f), new Vector2(0.5f, 0.5f));
 
         Text buttonText = CreateText("Label", buttonObject.transform, font, 30, TextAnchor.MiddleCenter);
-        SetRect(buttonText.rectTransform, Vector2.zero, new Vector2(700f, 96f), new Vector2(0.5f, 0.5f));
+        SetRect(buttonText.rectTransform, Vector2.zero, new Vector2(700f, 86f), new Vector2(0.5f, 0.5f));
         buttonText.text = label;
 
         return button;
