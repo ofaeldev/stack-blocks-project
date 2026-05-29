@@ -29,6 +29,7 @@ public class StackMainMenu : MonoBehaviour
     private Action onExitCancelled;
     private StackProgression progression;
     private StackShopService shopService;
+    private StackIapManager iapManager;
     private bool isShowing;
     private bool isShowingShop;
     private bool isConfirmingExit;
@@ -88,8 +89,10 @@ public class StackMainMenu : MonoBehaviour
     {
         onModeSelected = selectedModeCallback;
         progression = stackProgression;
-        shopService = new StackShopService(progression);
         onProgressionChanged = progressionChangedCallback;
+        shopService = new StackShopService(progression);
+        iapManager = StackIapManager.GetOrCreate();
+        iapManager.Initialize(progression, onProgressionChanged, SetShopStatus);
         isShowing = true;
         isShowingShop = false;
         isConfirmingExit = false;
@@ -162,7 +165,7 @@ public class StackMainMenu : MonoBehaviour
     private void TryRealMoneyProduct(int index)
     {
         StackShopProduct product = StackShopCatalog.CoinPackProducts[index];
-        SetShopStatus($"{product.RealMoneyProductId} needs Unity IAP");
+        iapManager.Purchase(product.RealMoneyProductId);
         RefreshShop();
     }
 
