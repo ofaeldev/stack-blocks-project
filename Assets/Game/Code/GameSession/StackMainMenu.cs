@@ -20,6 +20,7 @@ public class StackMainMenu : MonoBehaviour
     private Button backFromShopButton;
     private Text shopTitleText;
     private Text shopItemsText;
+    private Text shopStatusText;
     private Button confirmExitButton;
     private Button continueButton;
     private Action<StackGameMode> onModeSelected;
@@ -27,6 +28,7 @@ public class StackMainMenu : MonoBehaviour
     private Action onExitConfirmed;
     private Action onExitCancelled;
     private StackProgression progression;
+    private StackShopService shopService;
     private bool isShowing;
     private bool isShowingShop;
     private bool isConfirmingExit;
@@ -86,6 +88,7 @@ public class StackMainMenu : MonoBehaviour
     {
         onModeSelected = selectedModeCallback;
         progression = stackProgression;
+        shopService = new StackShopService(progression);
         onProgressionChanged = progressionChangedCallback;
         isShowing = true;
         isShowingShop = false;
@@ -145,15 +148,21 @@ public class StackMainMenu : MonoBehaviour
 
     private void BuyOrSelectSkin(int index)
     {
-        string skinId = StackSkinLibrary.SkinIds[index];
-        int cost = StackSkinLibrary.SkinCosts[index];
+        StackPurchaseResult result = shopService.BuyOrSelectSkin(StackShopCatalog.SkinProducts[index]);
 
-        if (progression.TryUnlockSkin(skinId, cost))
+        if (result.Success)
         {
-            progression.SelectSkin(skinId);
             onProgressionChanged?.Invoke();
         }
 
+        SetShopStatus(result.Message);
+        RefreshShop();
+    }
+
+    private void TryRealMoneyProduct(int index)
+    {
+        StackShopProduct product = StackShopCatalog.CoinPackProducts[index];
+        SetShopStatus($"{product.RealMoneyProductId} needs Unity IAP");
         RefreshShop();
     }
 
@@ -296,21 +305,39 @@ public class StackMainMenu : MonoBehaviour
         shopItemsText = CreateText("ShopItems", shopRoot.transform, font, 26, TextAnchor.MiddleCenter);
         SetRect(shopItemsText.rectTransform, new Vector2(0f, 220f), new Vector2(1100f, 70f), new Vector2(0.5f, 0.5f));
 
-        for (int i = 0; i < StackSkinLibrary.SkinIds.Length; i++)
+        for (int i = 0; i < StackShopCatalog.SkinProducts.Length; i++)
         {
             int skinIndex = i;
+            StackShopProduct product = StackShopCatalog.SkinProducts[i];
             Button skinButton = CreateButton(
-                $"SkinButton_{StackSkinLibrary.SkinIds[i]}",
+                $"SkinButton_{product.SkinId}",
                 shopRoot.transform,
                 font,
-                StackSkinLibrary.SkinNames[i],
-                new Vector2(0f, 80f - i * 115f),
+                product.Title,
+                new Vector2(-430f, 80f - i * 115f),
                 () => BuyOrSelectSkin(skinIndex)
             );
 
             Image skinImage = skinButton.GetComponent<Image>();
-            skinImage.color = StackSkinLibrary.GetColor(StackSkinLibrary.SkinIds[i]);
+            skinImage.color = StackSkinLibrary.GetColor(product.SkinId);
         }
+
+        for (int i = 0; i < StackShopCatalog.CoinPackProducts.Length; i++)
+        {
+            int productIndex = i;
+            StackShopProduct product = StackShopCatalog.CoinPackProducts[i];
+            CreateButton(
+                $"RealMoneyButton_{product.Id}",
+                shopRoot.transform,
+                font,
+                product.Title,
+                new Vector2(430f, 80f - i * 115f),
+                () => TryRealMoneyProduct(productIndex)
+            );
+        }
+
+        shopStatusText = CreateText("ShopStatus", shopRoot.transform, font, 24, TextAnchor.MiddleCenter);
+        SetRect(shopStatusText.rectTransform, new Vector2(0f, -250f), new Vector2(1200f, 80f), new Vector2(0.5f, 0.5f));
 
         backFromShopButton = CreateButton(
             "BackFromShopButton",
@@ -344,13 +371,49 @@ public class StackMainMenu : MonoBehaviour
             }
 
             string skinId = button.name.Replace("SkinButton_", string.Empty);
-            int index = Array.IndexOf(StackSkinLibrary.SkinIds, skinId);
             bool unlocked = progression.IsSkinUnlocked(skinId);
             bool selected = progression.SelectedSkinId == skinId;
-            string status = selected ? "Selected" : unlocked ? "Select" : $"{StackSkinLibrary.SkinCosts[index]} coins";
+            StackShopProduct product = StackShopCatalog.FindSkinById(skinId);
+            string status = selected ? "Selected" : unlocked ? "Select" : $"{product.CoinCost} coins";
 
             Text label = button.GetComponentInChildren<Text>();
-            label.text = $"{StackSkinLibrary.SkinNames[index]}\n{status}";
+            label.text = $"{product.Title}\n{status}";
+        }
+
+        foreach (StackShopProduct product in StackShopCatalog.CoinPackProducts)
+        {
+            Button button = FindShopButton($"RealMoneyButton_{product.Id}");
+
+            if (button == null)
+            {
+                continue;
+            }
+
+            Text label = button.GetComponentInChildren<Text>();
+            label.text = $"{product.Title}\n{product.CoinGrant} coins";
+        }
+    }
+
+    private Button FindShopButton(string buttonName)
+    {
+        Button[] buttons = shopRoot.GetComponentsInChildren<Button>(true);
+
+        foreach (Button button in buttons)
+        {
+            if (button.name == buttonName)
+            {
+                return button;
+            }
+        }
+
+        return null;
+    }
+
+    private void SetShopStatus(string message)
+    {
+        if (shopStatusText != null)
+        {
+            shopStatusText.text = message;
         }
     }
 

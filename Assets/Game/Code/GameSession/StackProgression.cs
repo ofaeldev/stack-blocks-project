@@ -32,10 +32,17 @@ public class StackProgression
     {
         BestScore = Mathf.Max(BestScore, score);
         TotalBlocks += blocks;
-        Coins += Mathf.Max(0, score / 100 + blocks);
+        AddCoinsWithoutSaving(Mathf.Max(0, score / 100 + blocks));
 
         PlayerPrefs.SetInt(BestScoreKey, BestScore);
         PlayerPrefs.SetInt(TotalBlocksKey, TotalBlocks);
+        PlayerPrefs.SetInt(CoinsKey, Coins);
+        PlayerPrefs.Save();
+    }
+
+    public void AddCoins(int amount)
+    {
+        AddCoinsWithoutSaving(amount);
         PlayerPrefs.SetInt(CoinsKey, Coins);
         PlayerPrefs.Save();
     }
@@ -70,6 +77,12 @@ public class StackProgression
         return true;
     }
 
+    public void GrantSkin(string skinId)
+    {
+        PlayerPrefs.SetInt(SkinUnlockPrefix + skinId, 1);
+        PlayerPrefs.Save();
+    }
+
     public void SelectSkin(string skinId)
     {
         if (!IsSkinUnlocked(skinId))
@@ -80,5 +93,10 @@ public class StackProgression
         SelectedSkinId = skinId;
         PlayerPrefs.SetString(SelectedSkinKey, SelectedSkinId);
         PlayerPrefs.Save();
+    }
+
+    private void AddCoinsWithoutSaving(int amount)
+    {
+        Coins += Mathf.Max(0, amount);
     }
 }
